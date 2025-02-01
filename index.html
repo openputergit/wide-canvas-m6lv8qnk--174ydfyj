@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Trial Room</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+</head>
+<style>
+    .clothing-item {
+        position: absolute;
+        transition: all 0.3s ease;
+    }
+    #webcam, #canvas {
+        transform: rotateY(180deg);
+    }
+    .instruction-box {
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 10px;
+        padding: 20px;
+        margin: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+</style>
+<body class="bg-blue-50">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Introduction Section -->
+        <div id="intro" class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-800 mb-6">Virtual Trial Room</h1>
+            <p class="text-lg text-gray-600 mb-8">Experience the future of shopping with our virtual trial room!</p>
+            
+            <!-- Gender Selection -->
+            <div class="space-x-4 mb-8">
+                <button onclick="selectGender('male')" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">Male</button>
+                <button onclick="selectGender('female')" class="bg-pink-600 text-white px-6 py-3 rounded-lg hover:bg-pink-700">Female</button>
+            </div>
+        </div>
+
+        <!-- Main Content (Initially Hidden) -->
+        <div id="mainContent" class="hidden">
+            <!-- Size Selection -->
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Select Size:</label>
+                <select id="sizeSelect" class="w-full md:w-64 p-2 border rounded">
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M">M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                </select>
+            </div>
+
+            <!-- Event Type -->
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Event Type:</label>
+                <select id="eventSelect" class="w-full md:w-64 p-2 border rounded">
+                    <option value="casual">Casual</option>
+                    <option value="formal">Formal</option>
+                    <option value="party">Party</option>
+                    <option value="sports">Sports</option>
+                </select>
+            </div>
+
+            <!-- Clothing Display -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Webcam Feed -->
+                <div class="relative">
+                    <video id="webcam" class="w-full rounded-lg" autoplay playsinline></video>
+                    <canvas id="canvas" class="absolute top-0 left-0 w-full h-full"></canvas>
+                </div>
+
+                <!-- Clothing Options -->
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-xl font-bold mb-4">Available Clothes</h3>
+                    <div id="clothingOptions" class="grid grid-cols-2 gap-4">
+                        <!-- Clothing items will be dynamically added here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Instructions Box -->
+            <div class="instruction-box mt-8">
+                <h3 class="text-xl font-bold mb-4">How to Use:</h3>
+                <ol class="list-decimal pl-6">
+                    <li>Allow camera access when prompted</li>
+                    <li>Select your size and event type</li>
+                    <li>Choose clothes from the options</li>
+                    <li>Use hand gestures to control:
+                        <ul class="list-disc pl-6 mt-2">
+                            <li>Open palm: Select item</li>
+                            <li>Pinch: Adjust size</li>
+                            <li>Swipe: Change items</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Clothing data
+        const clothingData = {
+            male: {
+                casual: [
+                    { id: 1, name: 'T-Shirt', color: ['white', 'black', 'blue'], image: 'https://example.com/tshirt.png' },
+                    // Add more items
+                ],
+                formal: [
+                    { id: 2, name: 'Suit', color: ['black', 'navy', 'gray'], image: 'https://example.com/suit.png' },
+                    // Add more items
+                ]
+                // Add more categories
+            },
+            female: {
+                casual: [
+                    { id: 3, name: 'Blouse', color: ['white', 'pink', 'blue'], image: 'https://example.com/blouse.png' },
+                    // Add more items
+                ],
+                formal: [
+                    { id: 4, name: 'Dress', color: ['black', 'red', 'blue'], image: 'https://example.com/dress.png' },
+                    // Add more items
+                ]
+                // Add more categories
+            }
+        };
+
+        let currentGender = null;
+        let handLandmarks = null;
+
+        function selectGender(gender) {
+            currentGender = gender;
+            document.getElementById('intro').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+            initializeWebcam();
+            loadClothingOptions();
+        }
+
+        async function initializeWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const video = document.getElementById('webcam');
+                video.srcObject = stream;
+                initializeHandTracking();
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+            }
+        }
+
+        function initializeHandTracking() {
+            const hands = new Hands({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }});
+
+            hands.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults(onHandResults);
+
+            // Start detection on video stream
+            const video = document.getElementById('webcam');
+            const camera = new Camera(video, {
+                onFrame: async () => {
+                    await hands.send({image: video});
+                },
+                width: 640,
+                height: 480
+            });
+            camera.start();
+        }
+
+        function onHandResults(results) {
+            handLandmarks = results.multiHandLandmarks;
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Process hand gestures and update clothing position
+            if (handLandmarks && handLandmarks.length > 0) {
+                processHandGestures(handLandmarks[0]);
+            }
+        }
+
+        function processHandGestures(landmarks) {
+            // Implement gesture recognition logic
+            // Example: Calculate palm position and orientation
+            const palmPosition = {
+                x: landmarks[0].x * canvas.width,
+                y: landmarks[0].y * canvas.height
+            };
+
+            // Update clothing position based on hand position
+            updateClothingPosition(palmPosition);
+        }
+
+        function updateClothingPosition(position) {
+            const clothingElements = document.getElementsByClassName('clothing-item');
+            for (let item of clothingElements) {
+                item.style.left = `${position.x}px`;
+                item.style.top = `${position.y}px`;
+            }
+        }
+
+        function loadClothingOptions() {
+            const container = document.getElementById('clothingOptions');
+            const eventType = document.getElementById('eventSelect').value;
+            
+            container.innerHTML = '';
+            const clothes = clothingData[currentGender][eventType];
+
+            clothes.forEach(item => {
+                const element = document.createElement('div');
+                element.className = 'clothing-option p-2 border rounded cursor-pointer hover:bg-gray-100';
+                element.innerHTML = `
+                    <img src="${item.image}" alt="${item.name}" class="w-full h-auto">
+                    <p class="text-center mt-2">${item.name}</p>
+                `;
+                element.onclick = () => selectClothing(item);
+                container.appendChild(element);
+            });
+        }
+
+        function selectClothing(item) {
+            // Implementation for clothing selection
+            console.log('Selected clothing:', item);
+        }
+
+        // Event listeners
+        document.getElementById('eventSelect').addEventListener('change', loadClothingOptions);
+        document.getElementById('sizeSelect').addEventListener('change', () => {
+            // Implementation for size change
+        });
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
